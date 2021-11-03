@@ -10,7 +10,7 @@ use syntect::highlighting::{Theme, ThemeSet};
 use gh_emoji::Replacer;
 use async_trait::async_trait;
 use serde_derive::Deserialize;
-use pulldown_cmark::{Parser, html, Event, Tag, CodeBlockKind};
+use pulldown_cmark::{Parser, html, Event, Tag, CodeBlockKind, LinkType};
 
 /// Error types for this crate
 #[derive(Debug)]
@@ -319,11 +319,11 @@ impl Website {
     }
 
     /// Encapsulate an asset on disk into an HTML-embedded base64 image
-    async fn load_asset(&self, path: impl AsRef<Path>) -> Result<String> {
+    async fn load_abs_asset(&self, path: impl AsRef<Path>) -> Result<String> {
         // Read the image data
-        let path = self.config.content_path.join(path);
+        let path = path.as_ref();
         let image = tokio::fs::read(&path).await
-            .map_err(|x| Error::ReadBase64Asset(path.clone(), x))?;
+            .map_err(|x| Error::ReadBase64Asset(path.to_path_buf(), x))?;
         
         // Create image string. We don't use a format string here so that we
         // can use `encode_config_buf` without performing an extra allocation
@@ -338,6 +338,10 @@ impl Website {
         // Finish the image string
         buf += "\" />";
         Ok(buf)
+    }
+    async fn load_asset(&self, path: impl AsRef<Path>) -> Result<String> {
+        let path = self.config.content_path.join(path);
+        self.load_abs_asset(path).await
     }
     
     /// Convert the `path` markdown into HTML without encapsulating it in the
@@ -389,6 +393,27 @@ impl Website {
                     // Suppress templateinfo and handler stuff
                     if lang.as_ref() == "templateinfo" ||
                             lang.as_ref().starts_with("cuddly_") {
+                        continue 'next_event;
+                    }
+                }
+                // If this is an inline image, we should embed it.
+                Event::Start(Tag::Image(LinkType::Inline, ref dest, _)) => {
+                    // It's probably not an inline image if it starts with http
+                    if !dest.starts_with("http") {
+                        // Treat it like the other images
+                        let asset = if let Some(parent) = path.as_ref().parent() {
+                            parent.join(&**dest)
+                        } else {
+                            <PathBuf as From<String>>::from(dest.clone().into_string())
+                        };
+                        event = Event::Html(self.load_abs_asset(asset).await?.into())
+                    }
+                }
+                // We need to skip the end of the inline image block under teh same
+                // conditions as above
+                Event::End(Tag::Image(LinkType::Inline, ref dest, _)) => {
+                    // It's probably not an inline image if it starts with http
+                    if !dest.starts_with("http") {
                         continue 'next_event;
                     }
                 }
