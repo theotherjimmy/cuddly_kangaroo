@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::path::{Path, PathBuf};
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use chrono::DateTime;
 use syntect::parsing::SyntaxSet;
 use syntect::highlighting::{Theme, ThemeSet};
@@ -182,6 +182,7 @@ impl Handler for Index {
         // Read the directory
         let mut dir = tokio::fs::read_dir(&config.path).await.map_err(|x|
             Error::ReadDirectory(config.path.clone(), x))?;
+        let mut posts = BTreeMap::new();
         while let Some(dirent) = dir.next_entry().await.map_err(|x|
                 Error::ReadDirectory(config.path.clone(), x))? {
             let path = dirent.path();
@@ -193,15 +194,25 @@ impl Handler for Index {
             }
             
             // Read markdown metadata
-            let (_, template_info) = website.process_md(path).await?;
+            let (path, template_info) = website.process_file(path).await?;
+            posts.insert(template_info.time.clone(), (path, template_info));
+        }
 
+        for (path, template_info) in posts.into_values().rev() {
+            let path = path
+                .strip_prefix(&website.config.output_path)
+                .unwrap_or_else(|_| &path)
+                .to_string_lossy();
             output += &format!(r#"
                 <article class="post-title">
-                    <a href="/" class="post-link">{title}</a>
+                    <a href="/{path}" class="post-link">{title}</a>
                     <div class="flex-break"></div>
                     <span class="post-date">{time}</span>
                 </article>
-            "#, title = template_info.title, time = template_info.time.format("%B %d, %Y"));
+            "#, title = template_info.title,
+                time = template_info.time.format("%B %d, %Y"),
+                path = path,
+            );
         }
         
         output += "</div>";
