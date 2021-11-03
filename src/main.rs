@@ -176,7 +176,6 @@ impl Handler for Index {
         // Output HTML
         let mut output = String::new();
         output += r#"<div class="container list-posts">"#;
-        output += r#"<h1 class="list-title">Blogs</h1>"#;
         output += r#"<h2 class="posts-year">2021</h2>"#;
 
         // Read the directory
