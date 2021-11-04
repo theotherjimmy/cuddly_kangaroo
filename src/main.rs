@@ -204,7 +204,7 @@ impl Handler for Index {
                 .to_string_lossy();
             output += &format!(r#"
                 <article class="post-title">
-                    <a href="/{path}" class="post-link">{title}</a>
+                    <a href="{path}" class="post-link">{title}</a>
                     <div class="flex-break"></div>
                     <span class="post-date">{time}</span>
                 </article>
