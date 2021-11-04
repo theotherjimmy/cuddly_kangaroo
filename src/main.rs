@@ -356,6 +356,9 @@ impl Website {
         // Track the current language associated with the active code block
         let mut cur_lang = None;
 
+        // Track if we're between the start and end of an image
+        let mut in_image = false;
+
         // The template metadata extracted from the markdown
         let mut template_info = None;
 
@@ -396,8 +399,17 @@ impl Website {
                         continue 'next_event;
                     }
                 }
-                // If this is an inline image, we should embed it.
+                // If this is an inline image, we should embed it. This part adds a break
+                // so that the rendered HTML looks okay.
                 Event::Start(Tag::Image(LinkType::Inline, ref dest, _)) => {
+                    // It's probably not an inline image if it starts with http
+                    if !dest.starts_with("http") {
+                        event = Event::HardBreak;
+                        in_image = true;
+                    }
+                }
+                // Actually render the image when we get to the end of the image tag.
+                Event::End(Tag::Image(LinkType::Inline, ref dest, _)) => {
                     // It's probably not an inline image if it starts with http
                     if !dest.starts_with("http") {
                         // Treat it like the other images
@@ -406,21 +418,19 @@ impl Website {
                         } else {
                             <PathBuf as From<String>>::from(dest.clone().into_string())
                         };
-                        event = Event::Html(self.load_abs_asset(asset).await?.into())
-                    }
-                }
-                // We need to skip the end of the inline image block under teh same
-                // conditions as above
-                Event::End(Tag::Image(LinkType::Inline, ref dest, _)) => {
-                    // It's probably not an inline image if it starts with http
-                    if !dest.starts_with("http") {
-                        continue 'next_event;
+                        event = Event::Html(self.load_abs_asset(asset).await?.into());
+                        in_image = false;
                     }
                 }
             
                 // If this is a text block, perform emoji transforms on it to
                 // convert things like `:heart:` into their unicode equivilents
                 Event::Text(ref mut text) => {
+                    // Skip rendering when we're in an image. We don't currently
+                    // handle alt text...
+                    if in_image {
+                        continue 'next_event;
+                    }
                     // If emoji replacement actually did anything, then update
                     // the old text with the new, replaced text
                     if let Cow::Owned(new_text) =
